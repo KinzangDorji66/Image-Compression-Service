@@ -1,7 +1,8 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
 from flasgger import Swagger, swag_from
 from PIL import Image
 import io
+from io import BytesIO
 import base64
 import os
 import time
@@ -49,6 +50,26 @@ def compress_image(image_path, max_size_kb, target_dimension, quality):
 
   return compressed_image_size, compressed_image_base64
 
+
+# Function to convert image to base64 and return it as base64-encoded string
+def convert_to_grayscale(image_path):
+  # Open the image file
+  original_image = Image.open(image_path)
+  
+  # Convert the image to grayscale
+  grayscale_image = original_image.convert("L")
+  
+  # Convert grayscale image to base64
+  with BytesIO() as buffer:
+    grayscale_image.save(buffer, format="JPEG")
+    grayscale_image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+  # Get image size
+  grayscale_image_size = len(grayscale_image_base64) / 1024
+  
+  return grayscale_image_base64, grayscale_image_size
+
+  
 
 @app.route('/get_compressed_image', methods=['GET'])
 def get_compressed_image():
@@ -119,7 +140,7 @@ def get_compressed_image():
 
     # Check if the image file exists
     if not os.path.exists(image_path):
-        result = {'error': f'Image {image_name} not found'}, 404
+      return {'error': f'Image {image_name} not found'}, 404
 
 
     # Get the target size as a parameter (defaulting to 1024 KB if not provided)
@@ -130,12 +151,12 @@ def get_compressed_image():
 
     # Check if image size is less than max size
     if (image_size_kb <= max_size_kb):
-        # Encode the binary data of the image
-        encoded_image = base64.b64encode(image_data)
-        
-        # Convert the bytes to a UTF-8 string
-        image_base64 = encoded_image.decode('utf-8')
-        result = {"message":f"Image size is already less than {max_size_kb} KB", "image_base64": image_base64 }
+      # Encode the binary data of the image
+      encoded_image = base64.b64encode(image_data)
+      
+      # Convert the bytes to a UTF-8 string
+      image_base64 = encoded_image.decode('utf-8')
+      return {"message":f"Image size is already less than {max_size_kb} KB", "image_base64": image_base64 }
 
     # Get the quality as a parameter (defaulting to 85 if not provided)
     quality = int(request.args.get('quality', 85))
@@ -148,11 +169,69 @@ def get_compressed_image():
     time_taken= (end_time - start_time) * 1000
 
     # Return the JSON response
-    result = {'time_elapsed': f'{int(time_taken)} ms', 'compressed_image_size': f'{compressed_image_size:.2f} KB', 'compressed_image_base64': compressed_image_base64}, 200
-    return jsonify(result)
+    return {'time_elapsed': f'{int(time_taken)} ms', 'compressed_image_size': f'{compressed_image_size:.2f} KB', 'compressed_image_base64': compressed_image_base64}, 200
   except Exception as e:
-    result = {'error': f'An error occured: {str(e)}'}, 500
-    return jsonify(result)
+    return {'error': f'An error occured: {str(e)}'}, 500
+
+
+@app.route('/get_grayscale_image', methods=['GET'])
+def get_grayscale_image():
+  """
+  Endpoint to get a gray scale image.
+  ---
+  parameters:
+    - name: image_name
+      in: query
+      type: string
+      description: Image name.
+      required: true
+
+  responses:
+    200:
+      description: Compressed image successfully retrieved.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              compressed_image:
+                type: string
+                description: Base64-encoded compressed image.
+    404:
+      description: Image not found.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                description: Error message.
+  """
+  try:
+    start_time = time.time()
+    
+    # Get the image name as a parameter
+    image_name = request.args.get('image_name')
+
+    # Construct the path to the image in the 'images' folder
+    image_path = os.path.join('images', image_name)
+
+    # Check if the image file exists
+    if not os.path.exists(image_path):
+      return {'error': f'Image {image_name} not found'}, 404
+
+    # Convert the image to grayscale
+    grayscale_image_base64, grayscale_image_size = convert_to_grayscale(image_path)
+
+    end_time = time.time()
+
+    time_taken= (end_time - start_time) * 1000
+
+    # Return the JSON response
+    return {'time_elapsed': f'{int(time_taken)} ms', 'grayscale_image_size': f'{grayscale_image_size:.2f} KB', 'grayscale_image_base64': grayscale_image_base64}, 200
+  except Exception as e:
+    return {'error': f'An error occured: {str(e)}'}, 500
 
 
 @app.route('/get_images', methods=['GET'])
